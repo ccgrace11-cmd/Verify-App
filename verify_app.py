@@ -36,12 +36,12 @@ def upload_to_drive(file_obj, filename):
     
     # 3. Define File Metadata
     # OPTIONAL: Add 'parents': ['YOUR_FOLDER_ID'] to save to a specific folder
-    file_metadata = {
-	'parents': '1d_Z1xkCj382X02v8WSk56DsaSC4jj2vq'
+	file_metadata = {
+		'parents': '1d_Z1xkCj382X02v8WSk56DsaSC4jj2vq',
         'name': filename,
-        'mimeType': 'image/jpeg'
+        'mimeType': "image/jpeg"
     }
-    
+	
     # 4. Convert Streamlit file to a BytesIO stream
     media = MediaIoBaseUpload(io.BytesIO(file_obj.getvalue()), mimetype='image/jpeg')
     
