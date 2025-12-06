@@ -3,3 +3,4 @@ st-gsheets-connection
 pandas
 geopy
 google-cloud-storage
+fpdf
