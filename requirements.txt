@@ -1,5 +1,5 @@
 streamlit
-streamlit-gsheets
+st-gsheets-connection
 pandas
 geopy
 google-api-python-client
