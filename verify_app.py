@@ -24,7 +24,6 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- HELPER: GOOGLE DRIVE UPLOADER ---
 def upload_to_drive(file_obj, filename):
     # 1. Authenticate using the same secrets as Sheets
-    # We reconstruct the credentials from the Streamlit secrets
     creds_dict = dict(st.secrets["connections"]["gsheets"])
     creds = service_account.Credentials.from_service_account_info(
         creds_dict, 
@@ -35,13 +34,13 @@ def upload_to_drive(file_obj, filename):
     drive_service = build('drive', 'v3', credentials=creds)
     
     # 3. Define File Metadata
-    # OPTIONAL: Add 'parents': ['YOUR_FOLDER_ID'] to save to a specific folder
-	file_metadata = {
-		'parents': '1d_Z1xkCj382X02v8WSk56DsaSC4jj2vq',
-        'name': filename,
-        'mimeType': "image/jpeg"
+    # Make sure to put your ACTUAL folder ID in the quotes below if using parents
+    file_metadata = {
+        "name": filename,
+        "parents": "1d_Z1xkCj382X02v8WSk56DsaSC4jj2vq",
+        "mimeType": "image/jpeg"
     }
-	
+    
     # 4. Convert Streamlit file to a BytesIO stream
     media = MediaIoBaseUpload(io.BytesIO(file_obj.getvalue()), mimetype='image/jpeg')
     
@@ -54,7 +53,6 @@ def upload_to_drive(file_obj, filename):
     file_id = file.get('id')
     
     # 6. Make Public (So Streamlit can see it)
-    # WARNING: This makes the image link accessible to anyone with the link.
     drive_service.permissions().create(
         fileId=file_id,
         body={'role': 'reader', 'type': 'anyone'}
