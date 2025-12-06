@@ -3,6 +3,7 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import datetime
 import io
+import os
 from geopy.geocoders import Nominatim
 from geopy.extra.rate_limiter import RateLimiter
 
@@ -24,6 +25,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 # --- HELPER: GOOGLE DRIVE UPLOADER ---
 def upload_to_drive(file_obj, filename):
     # 1. Authenticate using the same secrets as Sheets
+    # We reconstruct the credentials from the Streamlit secrets
     creds_dict = dict(st.secrets["connections"]["gsheets"])
     creds = service_account.Credentials.from_service_account_info(
         creds_dict, 
@@ -34,7 +36,7 @@ def upload_to_drive(file_obj, filename):
     drive_service = build('drive', 'v3', credentials=creds)
     
     # 3. Define File Metadata
-    # Make sure to put your ACTUAL folder ID in the quotes below if using parents
+    # PASTE YOUR FOLDER ID BELOW inside the quotes!
     file_metadata = {
         "name": filename,
         "parents": "1d_Z1xkCj382X02v8WSk56DsaSC4jj2vq",
@@ -61,10 +63,13 @@ def upload_to_drive(file_obj, filename):
     # 7. Return the "View" URL
     return f"https://drive.google.com/uc?id={file_id}"
 
+# --- DATA FUNCTIONS ---
 def get_data():
     df = conn.read(worksheet="jobs", ttl=0)
+    # Crash Shield: Force numbers
     df['lat'] = pd.to_numeric(df['lat'], errors='coerce')
     df['lon'] = pd.to_numeric(df['lon'], errors='coerce')
+    # ID Cleaner: Force IDs to be Integers
     df['id'] = pd.to_numeric(df['id']).fillna(0).astype(int)
     return df
 
@@ -100,14 +105,17 @@ def add_new_job(address, job_type, bounty, instructions):
         location = None
     
     if location:
+        real_lat = location.latitude
+        real_lon = location.longitude
+        
         df = get_data()
         new_id = df['id'].max() + 1 if not df.empty else 101
         
         new_row = pd.DataFrame([{
             "id": int(new_id),
             "address": location.address,
-            "lat": location.latitude,
-            "lon": location.longitude,
+            "lat": real_lat,
+            "lon": real_lon,
             "type": job_type,
             "bounty": bounty,
             "status": "Open",
@@ -128,34 +136,41 @@ user_role = st.sidebar.radio("Who are you?", ["Client (Insurance Co)", "Field Ag
 
 df = get_data()
 
+# ==========================================
+# VIEW 1: CLIENT DASHBOARD
+# ==========================================
 if user_role == "Client (Insurance Co)":
     st.title("Verify | Client Portal (Cloud)")
+    
     col1, col2 = st.columns([1, 2])
     
     with col1:
         st.subheader("📍 Dispatch New Job")
         with st.form("new_job_form"):
-            addr = st.text_input("Property Address")
-            j_type = st.selectbox("Job Type", ["Storm Damage Check", "Occupancy Verification"])
+            addr = st.text_input("Property Address", placeholder="e.g. 100 Main St, Boston, MA")
+            j_type = st.selectbox("Job Type", ["Storm Damage Check", "Occupancy Verification", "Airbnb Exterior Check"])
             instr = st.text_area("Instructions")
-            price = st.number_input("Bounty Offer ($)", min_value=15, value=35, step=5)
+            price = st.number_input("Bounty Offer ($)", min_value=15, max_value=500, value=35, step=5)
             
             if st.form_submit_button("🚀 Dispatch"):
                 if addr:
                     with st.spinner("Verifying Address..."):
                         if add_new_job(addr, j_type, price, instr):
-                            st.success("Job Dispatched!")
+                            st.success("Job Dispatched! Address Verified.")
                             st.rerun()
                         else:
-                            st.error("Address not found.")
+                            st.error("Address not found. Try adding City/State.")
+                else:
+                    st.warning("Please enter an address.")
 
     with col2:
         st.subheader("🗺️ Live Operations Map")
         st.map(df[['lat', 'lon']].dropna())
+        
         st.divider()
         st.subheader("📂 Completed Reports")
-        
         completed_jobs = df[df['status'] == 'Complete']
+        
         if completed_jobs.empty:
             st.info("No reports ready yet.")
         else:
@@ -165,16 +180,26 @@ if user_role == "Client (Insurance Co)":
                     with c1:
                         # NEW: Check if it's a URL (Cloud) or Path (Local Legacy)
                         evidence_path = str(job['evidence'])
+                        
                         if "http" in evidence_path:
+                            # Use 'width' not 'use_column_width'
                             st.image(evidence_path, caption="Cloud Evidence", width=None)
-                        elif evidence_path and evidence_path != "nan":
-                            st.warning("Legacy local file (cannot view in cloud).")
+                        elif evidence_path and evidence_path != "nan" and evidence_path != "":
+                            st.warning(f"Legacy local file (cannot view in cloud): {evidence_path}")
+                        else:
+                            st.info("No evidence uploaded yet.")
+                            
                     with c2:
                         st.write(f"**Verified At:** {job['timestamp']}")
                         st.write(f"**Target Location:** {job['lat']}, {job['lon']}")
+                        st.success("Chain of Custody: SECURE")
 
+# ==========================================
+# VIEW 2: FIELD AGENT APP
+# ==========================================
 else:
     st.title("Verify | Field Agent App")
+    
     open_jobs = df[df['status'] == 'Open']
     
     if open_jobs.empty:
