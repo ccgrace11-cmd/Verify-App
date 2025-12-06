@@ -211,7 +211,25 @@ if user_role == "Client (Insurance Co)":
 
     with col2:
         st.subheader("🗺️ Live Operations Map")
-        st.map(df[['lat', 'lon']].dropna())
+        
+        # 1. Filter out bad data (Null Island)
+        map_df = df[(df['lat'] != 0) & (df['lon'] != 0)].copy()
+        
+        # 2. Assign Colors based on Status
+        # Format is [Red, Green, Blue, Alpha(Transparency)]
+        def get_color(status):
+            if status == 'Open':
+                return [255, 0, 0, 200]  # 🔴 Red for Action Needed
+            elif status == 'Complete':
+                return [0, 200, 0, 200]  # 🟢 Green for Done
+            return [128, 128, 128, 200]  # Gray for unknowns
+            
+        # Apply the color logic to a new column
+        map_df['color'] = map_df['status'].apply(get_color)
+        
+        # 3. Render Map with Color Column
+        st.caption("🔴 Red = Open Requests | 🟢 Green = Completed Jobs")
+        st.map(map_df, color="color")
         st.divider()
         st.subheader("📂 Completed Reports")
         completed_jobs = df[df['status'] == 'Complete']
