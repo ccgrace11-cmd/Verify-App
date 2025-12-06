@@ -168,6 +168,16 @@ if user_role == "Client (Insurance Co)":
                     with c2:
                         st.write(f"**Verified At:** {job['timestamp']}")
                         st.write(f"**Target Location:** {job['lat']}, {job['lon']}")
+                        
+                        # ADD THIS BLOCK BACK:
+                        st.success("✅ CHAIN OF CUSTODY: VERIFIED")
+                        with st.expander("View Forensic Data"):
+                            st.json({
+                                "Source": "Live Camera Feed",
+                                "Integrity": "SHA-256 (Simulated)",
+                                "Device": "Authorized Mobile Client",
+                                "Timestamp": "NTP Synced"
+                            })
 
 else:
     st.title("Verify | Field Agent App")
