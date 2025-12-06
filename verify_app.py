@@ -51,7 +51,17 @@ def generate_pdf(job):
     pdf.set_font("Arial", 'B', 12)
     pdf.cell(40, 10, "GPS Location:", border=0)
     pdf.set_font("Arial", '', 12)
-    pdf.cell(0, 10, f"{job['lat']}, {job['lon']}", ln=True)
+    
+    # LOGIC FIX: Check for Null Island
+    lat = job['lat']
+    lon = job['lon']
+    
+    if lat == 0.0 and lon == 0.0:
+        pdf.set_text_color(255, 0, 0) # Red Text
+        pdf.cell(0, 10, "Geocoding Unavailable (Address Verified Manually)", ln=True)
+        pdf.set_text_color(0, 0, 0) # Reset to Black
+    else:
+        pdf.cell(0, 10, f"{lat}, {lon}", ln=True)
     
     pdf.ln(10)
     
@@ -122,39 +132,53 @@ def update_job_status(job_id, evidence_file):
         st.error(f"STAY ON SCREEN - Upload Failed: {e}")
         return False
 
+import time # Add this to your imports at the top
+
 def add_new_job(address, job_type, bounty, instructions):
-    real_lat = 0.0
-    real_lon = 0.0
-    address_found = False
-    try:
-        location = geolocator.geocode(address)
-        if location:
-            real_lat = location.latitude
-            real_lon = location.longitude
-            address = location.address
-            address_found = True
-    except:
-        pass
+    # 1. Setup specific User Agent to avoid blocking
+    # We add a random number to make it look unique
+    unique_agent = f"verify_app_{int(time.time())}"
+    geolocator = Nominatim(user_agent=unique_agent)
     
-    df = get_data()
-    new_id = df['id'].max() + 1 if not df.empty else 101
+    location = None
     
-    new_row = pd.DataFrame([{
-        "id": int(new_id),
-        "address": address,
-        "lat": real_lat,
-        "lon": real_lon,
-        "type": job_type,
-        "bounty": bounty,
-        "status": "Open",
-        "instructions": instructions,
-        "evidence": "",
-        "timestamp": ""
-    }])
-    updated_df = pd.concat([df, new_row], ignore_index=True)
-    conn.update(worksheet="jobs", data=updated_df)
-    st.cache_data.clear()
-    return address_found
+    # 2. Retry Logic (Try 3 times before giving up)
+    for attempt in range(3):
+        try:
+            # timeout=10 gives it more time to think
+            location = geolocator.geocode(address, timeout=10)
+            if location:
+                break # Found it! Stop trying.
+        except:
+            time.sleep(1) # Wait 1 second and try again
+    
+    # 3. Decision Time
+    if location:
+        df = get_data()
+        new_id = df['id'].max() + 1 if not df.empty else 101
+        
+        new_row = pd.DataFrame([{
+            "id": int(new_id),
+            "address": location.address, # Use the official clean address
+            "lat": location.latitude,
+            "lon": location.longitude,
+            "type": job_type,
+            "bounty": bounty,
+            "status": "Open",
+            "instructions": instructions,
+            "evidence": "",
+            "timestamp": ""
+        }])
+        
+        updated_df = pd.concat([df, new_row], ignore_index=True)
+        conn.update(worksheet="jobs", data=updated_df)
+        st.cache_data.clear()
+        return True
+        
+    else:
+        # If we failed 3 times, return False. 
+        # We do NOT save the job with 0.0 coordinates.
+        return False
 
 # --- APP INTERFACE ---
 st.sidebar.header("🔐 User Simulator")
@@ -174,11 +198,17 @@ if user_role == "Client (Insurance Co)":
             price = st.number_input("Bounty Offer ($)", min_value=15, value=35, step=5)
             if st.form_submit_button("🚀 Dispatch"):
                 if addr:
-                    with st.spinner("Processing..."):
-                        found = add_new_job(addr, j_type, price, instr)
-                        if found: st.success("Job Dispatched!")
-                        else: st.warning("Job Dispatched (Map service busy).")
-                        st.rerun()
+                    with st.spinner("Triangulating Coordinates..."):
+                        success = add_new_job(addr, j_type, price, instr)
+                        
+                        if success:
+                            st.success("Job Dispatched! Address Verified.")
+                            st.rerun()
+                        else:
+                            # Now we actually stop the user if the map fails
+                            st.error("⚠️ Address not found on global map services. Please check spelling or add Zip Code.")
+                else:
+                    st.warning("Please enter an address.")
 
     with col2:
         st.subheader("🗺️ Live Operations Map")
