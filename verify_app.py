@@ -77,7 +77,6 @@ def update_job_status(job_id, evidence_file):
     df = get_data()
     clean_id = int(job_id)
     
-    # --- NEW: UPLOAD TO CLOUD INSTEAD OF LOCAL DISK ---
     try:
         # Create a clean filename
         filename = f"job_{clean_id}_evidence.jpg"
@@ -94,10 +93,12 @@ def update_job_status(job_id, evidence_file):
             df.at[idx, 'timestamp'] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             conn.update(worksheet="jobs", data=df)
             st.cache_data.clear()
+            return True # <--- SUCCESS
             
     except Exception as e:
-        st.error(f"Upload Failed: {e}")
-
+        st.error(f"STAY ON SCREEN - Upload Failed: {e}")
+        return False # <--- FAILURE
+        
 def add_new_job(address, job_type, bounty, instructions):
     # Default to "Null Island" if map fails
     real_lat = 0.0
@@ -237,7 +238,11 @@ else:
         if picture:
             if st.button("Submit Evidence"):
                 with st.spinner("Uploading to Google Drive..."):
-                    update_job_status(st.session_state['active_job'], picture)
-                    del st.session_state['active_job']
-                    st.success("Uploaded! Check Client Dashboard.")
-                    st.rerun()
+                    # Only rerun if the update returns True
+                    success = update_job_status(st.session_state['active_job'], picture)
+                    
+                    if success:
+                        del st.session_state['active_job']
+                        st.success("Uploaded! Check Client Dashboard.")
+                        st.rerun()
+                    # If success is False, the code stops here, and the Error stays on screen.
