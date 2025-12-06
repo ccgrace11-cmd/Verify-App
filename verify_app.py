@@ -99,36 +99,46 @@ def update_job_status(job_id, evidence_file):
         st.error(f"Upload Failed: {e}")
 
 def add_new_job(address, job_type, bounty, instructions):
+    # Default to "Null Island" if map fails
+    real_lat = 0.0
+    real_lon = 0.0
+    address_found = False
+    
+    # 1. Try to Convert Address to Coordinates
     try:
         location = geolocator.geocode(address)
+        if location:
+            real_lat = location.latitude
+            real_lon = location.longitude
+            address = location.address # Use the clean, official string
+            address_found = True
     except:
-        location = None
+        # If the map service times out, just keep going
+        pass
     
-    if location:
-        real_lat = location.latitude
-        real_lon = location.longitude
-        
-        df = get_data()
-        new_id = df['id'].max() + 1 if not df.empty else 101
-        
-        new_row = pd.DataFrame([{
-            "id": int(new_id),
-            "address": location.address,
-            "lat": real_lat,
-            "lon": real_lon,
-            "type": job_type,
-            "bounty": bounty,
-            "status": "Open",
-            "instructions": instructions,
-            "evidence": "",
-            "timestamp": ""
-        }])
-        
-        updated_df = pd.concat([df, new_row], ignore_index=True)
-        conn.update(worksheet="jobs", data=updated_df)
-        st.cache_data.clear()
-        return True
-    return False
+    # 2. Save the Job (Even if map failed)
+    df = get_data()
+    new_id = df['id'].max() + 1 if not df.empty else 101
+    
+    new_row = pd.DataFrame([{
+        "id": int(new_id),
+        "address": address, # Saves whatever you typed if map failed
+        "lat": real_lat,
+        "lon": real_lon,
+        "type": job_type,
+        "bounty": bounty,
+        "status": "Open",
+        "instructions": instructions,
+        "evidence": "",
+        "timestamp": ""
+    }])
+    
+    updated_df = pd.concat([df, new_row], ignore_index=True)
+    conn.update(worksheet="jobs", data=updated_df)
+    st.cache_data.clear()
+    
+    # Return True/False so we can show a warning
+    return address_found
 
 # --- APP INTERFACE ---
 st.sidebar.header("🔐 User Simulator")
@@ -154,12 +164,16 @@ if user_role == "Client (Insurance Co)":
             
             if st.form_submit_button("🚀 Dispatch"):
                 if addr:
-                    with st.spinner("Verifying Address..."):
-                        if add_new_job(addr, j_type, price, instr):
-                            st.success("Job Dispatched! Address Verified.")
-                            st.rerun()
+                    with st.spinner("Processing..."):
+                        # We accept the job no matter what
+                        found_on_map = add_new_job(addr, j_type, price, instr)
+                        
+                        if found_on_map:
+                            st.success("Job Dispatched! Address Verified on Map.")
                         else:
-                            st.error("Address not found. Try adding City/State.")
+                            st.warning("Job Dispatched, but Address could not be pinpointed on the map. (Map service busy).")
+                            
+                        st.rerun()
                 else:
                     st.warning("Please enter an address.")
 
