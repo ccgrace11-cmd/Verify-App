@@ -4,7 +4,7 @@ import pandas as pd
 import datetime
 import io
 import os
-from geopy.geocoders import Nominatim
+from geopy.geocoders import ArcGIS
 from geopy.extra.rate_limiter import RateLimiter
 
 # --- NEW: PDF GENERATION ---
@@ -17,7 +17,7 @@ from google.oauth2 import service_account
 
 # --- SETUP ---
 st.set_page_config(page_title="Verify - Cloud MVP", layout="wide")
-geolocator = Nominatim(user_agent="verify_mvp_app")
+geolocator = ArcGIS(user_agent="verify_mvp_app")
 geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -135,51 +135,49 @@ def update_job_status(job_id, evidence_file):
 import time # Add this to your imports at the top
 
 def add_new_job(address, job_type, bounty, instructions):
-    # 1. Setup specific User Agent to avoid blocking
-    # We add a random number to make it look unique
-    unique_agent = f"verify_app_{int(time.time())}"
-    geolocator = Nominatim(user_agent=unique_agent)
+    real_lat = 0.0
+    real_lon = 0.0
+    address_found = False
     
-    location = None
+    # 1. Try to Convert Address using ArcGIS
+    try:
+        # ArcGIS is very robust, usually finds it on the first try
+        location = geolocator.geocode(address, timeout=10)
+        
+        if location:
+            real_lat = location.latitude
+            real_lon = location.longitude
+            address = location.address # Use the clean, official string
+            address_found = True
+    except Exception as e:
+        print(f"Map Error: {e}")
+        # If it fails, we fall through to the save block below
+        # but address_found remains False.
     
-    # 2. Retry Logic (Try 3 times before giving up)
-    for attempt in range(3):
-        try:
-            # timeout=10 gives it more time to think
-            location = geolocator.geocode(address, timeout=10)
-            if location:
-                break # Found it! Stop trying.
-        except:
-            time.sleep(1) # Wait 1 second and try again
+    # 2. Save the Job
+    # We save it regardless, but we track if we found the coords
+    df = get_data()
+    new_id = df['id'].max() + 1 if not df.empty else 101
     
-    # 3. Decision Time
-    if location:
-        df = get_data()
-        new_id = df['id'].max() + 1 if not df.empty else 101
-        
-        new_row = pd.DataFrame([{
-            "id": int(new_id),
-            "address": location.address, # Use the official clean address
-            "lat": location.latitude,
-            "lon": location.longitude,
-            "type": job_type,
-            "bounty": bounty,
-            "status": "Open",
-            "instructions": instructions,
-            "evidence": "",
-            "timestamp": ""
-        }])
-        
-        updated_df = pd.concat([df, new_row], ignore_index=True)
-        conn.update(worksheet="jobs", data=updated_df)
-        st.cache_data.clear()
-        return True
-        
-    else:
-        # If we failed 3 times, return False. 
-        # We do NOT save the job with 0.0 coordinates.
-        return False
-
+    new_row = pd.DataFrame([{
+        "id": int(new_id),
+        "address": address, # Saves user input if map failed, or clean address if found
+        "lat": real_lat,
+        "lon": real_lon,
+        "type": job_type,
+        "bounty": bounty,
+        "status": "Open",
+        "instructions": instructions,
+        "evidence": "",
+        "timestamp": ""
+    }])
+    
+    updated_df = pd.concat([df, new_row], ignore_index=True)
+    conn.update(worksheet="jobs", data=updated_df)
+    st.cache_data.clear()
+    
+    return address_found
+    
 # --- APP INTERFACE ---
 st.sidebar.header("🔐 User Simulator")
 user_role = st.sidebar.radio("Who are you?", ["Client (Insurance Co)", "Field Agent (Verifier)"])
@@ -199,14 +197,15 @@ if user_role == "Client (Insurance Co)":
             if st.form_submit_button("🚀 Dispatch"):
                 if addr:
                     with st.spinner("Triangulating Coordinates..."):
-                        success = add_new_job(addr, j_type, price, instr)
+                        found = add_new_job(addr, j_type, price, instr)
                         
-                        if success:
+                        if found:
                             st.success("Job Dispatched! Address Verified.")
-                            st.rerun()
                         else:
-                            # Now we actually stop the user if the map fails
-                            st.error("⚠️ Address not found on global map services. Please check spelling or add Zip Code.")
+                            st.warning("Job Dispatched, but Map Service could not verify address. (Saved with manual address).")
+                        
+                        time.sleep(1) # Give user time to read the message
+                        st.rerun()
                 else:
                     st.warning("Please enter an address.")
 
