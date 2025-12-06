@@ -160,7 +160,7 @@ if user_role == "Client (Insurance Co)":
                     with c1:
                         evidence_path = str(job['evidence'])
                         if "http" in evidence_path:
-                            st.image(evidence_path, caption="Verified Evidence", width=None)
+                            st.image(evidence_path, caption="Verified Evidence", width="stretch")
                         elif evidence_path and evidence_path != "nan" and evidence_path != "":
                              st.warning("Legacy file.")
                         else:
